@@ -1,123 +1,132 @@
 import React, { useRef, useEffect, useState } from 'react';
 import io from 'socket.io-client';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faVideo, faVideoSlash, faMicrophone, faMicrophoneSlash } from '@fortawesome/free-solid-svg-icons';
+import { faVideo, faVideoSlash, faMicrophone, faMicrophoneSlash, faPhone } from '@fortawesome/free-solid-svg-icons';
 
 const VideoChat = () => {
-  const [socket, setSocket] = useState(null);
-  const [peerConnection, setPeerConnection] = useState(null);
+  const [nickname, setNickname] = useState('');
   const [isChatStarted, setIsChatStarted] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  const [waitingMessage, setWaitingMessage] = useState('Waiting for another user to join');
+  const [socket, setSocket] = useState(null);
+  const [pairedUserId, setPairedUserId] = useState(null);
+
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
 
+  const peerConnectionRef = useRef(null);
+  const receivedTracksRef = useRef({ audio: false, video: false });
+
+  const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001';
+
   useEffect(() => {
-    const iceServers = {
-      iceServers: [
-        {
-          urls: "stun:stun.l.google.com:19302",
-        },
-      ],
-    };
+    console.log('Attempting to connect to socket server...');
+    const newSocket = io(SOCKET_URL, {
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
 
-    const newPeerConnection = new RTCPeerConnection(iceServers);
-    setPeerConnection(newPeerConnection);
+    newSocket.on('connect', () => {
+      console.log('Socket connected successfully!');
+    });
 
-    newPeerConnection.ontrack = (event) => {
-      remoteVideoRef.current.srcObject = event.streams[0];
-    };
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+    });
 
-    const newSocket = io('http://localhost:5001');
+    newSocket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+    });
+
     setSocket(newSocket);
 
-    newSocket.on('offer', async (offer) => {
-      await handleIncomingOffer(offer, newPeerConnection, newSocket);
-    });
-
-    newSocket.on('answer', async (answer) => {
-      await newPeerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-    });
-
-    newSocket.on('ice-candidate', async (candidate) => {
-      try {
-        await newPeerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (error) {
-        console.error('Error adding received ice candidate', error);
-      }
-    });
-
-    newSocket.on('user-disconnected', () => {
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = null;
-        remoteVideoRef.current.style.backgroundColor = 'black';
-      }
-
-      if (peerConnection) {
-        peerConnection.close();
-        setPeerConnection(new RTCPeerConnection(iceServers));
-      }
-    });
-
-    newPeerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        newSocket.emit('ice-candidate', event.candidate);
-      }
-    };    
-
     return () => {
-      newSocket.close();
-      newPeerConnection.close();
+      if (newSocket) {
+        newSocket.close();
+      }
     };
   }, []);
+  
 
-  const startChat = async () => {
-    setIsChatStarted(true);
+  useEffect(() => {
+    if (isChatStarted) {
+      const interval = setInterval(() => {
+        setWaitingMessage((prev) => (prev.endsWith('...') ? 'Waiting for another user to join' : prev + '.'));
+      }, 500);
 
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    localStreamRef.current = stream;
-    localVideoRef.current.srcObject = stream;
+      return () => clearInterval(interval);
+    }
+  }, [isChatStarted]);
 
-    stream.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, stream);
-    });
+  const startChat = () => {
+    if (!nickname.trim()) return;
+    
+    if (!socket?.connected) {
+      console.error('Socket not connected');
+      alert('Connection error. Please try again.');
+      return;
+    }
 
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('offer', offer);
+    try {
+      setIsChatStarted(true);
+    } catch (error) {
+      console.error('Error starting chat:', error);
+      alert('Failed to start chat. Please try again.');
+    }
   };
 
+  // handle media setup after chat is started
+  useEffect(() => {
+    const setupMediaStream = async () => {
+      if (!isChatStarted) return;
+
+      try {
+        // Get media stream
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStreamRef.current = stream;
+
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        } else {
+          console.error('Local video ref not available');
+          return;
+        }
+
+        if (!peerConnectionRef.current) {
+          console.error('PeerConnection not initialized');
+          return;
+        }
+
+        // Add tracks to peer connection
+        stream.getTracks().forEach((track) => {
+          console.log('Adding track to peer connection:', track.kind, track.enabled, track.readyState);
+          const sender = peerConnectionRef.current.addTrack(track, stream);
+          console.log('Track sender created:', sender.track.kind);
+        });
+
+        // Join the chat
+        socket.emit('join', { nickname });
+      } catch (error) {
+        console.error('Error accessing media devices:', error);
+        setIsChatStarted(false); 
+      }
+    };
+
+    setupMediaStream();
+  }, [isChatStarted, nickname, socket]);
+
   const handleIncomingOffer = async (offer, peerConnection, socket) => {
-    setIsChatStarted(true);
-
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    localStreamRef.current = stream;
-    localVideoRef.current.srcObject = stream;
-
-    stream.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, stream);
-    });
-
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     socket.emit('answer', answer);
   };
 
-  const endChat = () => {
-    setIsChatStarted(false);
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localVideoRef.current.srcObject = null;
-      remoteVideoRef.current.srcObject = null;
-    }
-    peerConnection.close();
-    setPeerConnection(new RTCPeerConnection()); // Reset peer connection
-  };
-
   const toggleVideo = () => {
-    const videoTrack = localStreamRef.current.getTracks().find(track => track.kind === 'video');
+    const videoTrack = localStreamRef.current.getTracks().find((track) => track.kind === 'video');
     if (videoTrack) {
       videoTrack.enabled = !videoTrack.enabled;
       setIsVideoEnabled(!isVideoEnabled);
@@ -125,45 +134,111 @@ const VideoChat = () => {
   };
 
   const toggleAudio = () => {
-    const audioTrack = localStreamRef.current.getTracks().find(track => track.kind === 'audio');
+    const audioTrack = localStreamRef.current.getTracks().find((track) => track.kind === 'audio');
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
       setIsAudioEnabled(!isAudioEnabled);
     }
   };
 
+  const endCall = () => {
+    setIsChatStarted(false);
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localVideoRef.current.srcObject = null;
+      remoteVideoRef.current.srcObject = null;
+    }
+    peerConnectionRef.current.close();
+    peerConnectionRef.current = new RTCPeerConnection();
+  };
+
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
-      <h1 className="text-3xl font-bold text-blue-500 mb-8">WebRTC Video Chat</h1>
-      <div className="flex flex-wrap gap-8 justify-center items-center w-full max-w-6xl">
-        <div className="flex flex-col items-center gap-4">
-          <video ref={localVideoRef} autoPlay playsInline muted className="w-full max-w-lg rounded-lg border-4 border-gray-400 shadow-lg"></video>
-          <p className="text-lg font-semibold">You</p>
-          <div className="flex gap-4">
-            <button onClick={toggleVideo} className="w-12 h-12 flex justify-center items-center rounded-full bg-blue-600 hover:bg-blue-800 shadow-lg">
+      {!isChatStarted ? (
+        <div className="text-center">
+          <h1 className="text-4xl font-bold text-blue-500 mb-6">StreamConnect</h1>
+          <input
+            type="text"
+            placeholder="Enter your nickname"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            className="p-2 text-black rounded w-80 mb-4"
+          />
+          <button
+            onClick={() => {
+              console.log('Start button clicked');
+              console.log('Socket status:', socket?.connected);
+              console.log('Nickname:', nickname);
+              startChat();
+            }}
+            disabled={!nickname.trim()}
+            className={`px-6 py-2 rounded-lg font-semibold ${
+              nickname.trim() ? 'bg-green-500 hover:bg-green-700' : 'bg-gray-500 cursor-not-allowed'
+            }`}
+          >
+            Start Call
+          </button>
+        </div>
+      ) : (
+        <div className="w-full h-full flex flex-col">
+          <div className="flex-1 flex">
+            <div className="flex-1 bg-black flex flex-col items-center justify-center relative">
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+              <p className="absolute top-2 left-2 text-lg font-semibold bg-black bg-opacity-50 px-2 py-1 rounded">
+                {nickname}
+              </p>
+            </div>
+            <div className="flex-1 bg-gray-800 flex items-center justify-center relative">
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+                onLoadedMetadata={() => {
+                  console.log('Remote video metadata loaded');
+                  if (remoteVideoRef.current.paused) {
+                    remoteVideoRef.current.play().catch(err => {
+                      console.error('Error playing remote video on metadata load:', err);
+                    });
+                  }
+                }}
+                onPlay={() => console.log('Remote video started playing')}
+                onPause={() => console.log('Remote video paused')}
+                onError={(e) => console.error('Remote video error:', e)}
+              />
+              {(!remoteVideoRef.current?.srcObject || !remoteVideoRef.current?.videoWidth) && (
+                <p className="absolute text-xl font-semibold text-gray-300">{waitingMessage}</p>
+              )}
+            </div>
+          </div>
+          <div className="w-full bg-gray-700 flex items-center justify-center gap-4 py-3">
+            <button
+              onClick={toggleVideo}
+              className="w-12 h-12 flex justify-center items-center rounded-full bg-blue-600 hover:bg-blue-800"
+            >
               <FontAwesomeIcon icon={isVideoEnabled ? faVideo : faVideoSlash} className="text-white text-xl" />
             </button>
-            <button onClick={toggleAudio} className="w-12 h-12 flex justify-center items-center rounded-full bg-green-600 hover:bg-green-800 shadow-lg">
+            <button
+              onClick={toggleAudio}
+              className="w-12 h-12 flex justify-center items-center rounded-full bg-green-600 hover:bg-green-800"
+            >
               <FontAwesomeIcon icon={isAudioEnabled ? faMicrophone : faMicrophoneSlash} className="text-white text-xl" />
+            </button>
+            <button
+              onClick={endCall}
+              className="w-12 h-12 flex justify-center items-center rounded-full bg-red-600 hover:bg-red-800"
+            >
+              <FontAwesomeIcon icon={faPhone} className="text-white text-xl" />
             </button>
           </div>
         </div>
-        <div className="flex flex-col items-center gap-4">
-          <video ref={remoteVideoRef} autoPlay playsInline className="w-full max-w-lg rounded-lg border-4 border-gray-400 shadow-lg bg-black"></video>
-          <p className="text-lg font-semibold">Remote User</p>
-        </div>
-      </div>
-      <div className="mt-10">
-        {!isChatStarted ? (
-          <button onClick={startChat} className="px-8 py-2 text-lg bg-green-600 hover:bg-green-800 rounded-lg shadow-lg">
-            Start Video Chat
-          </button>
-        ) : (
-          <button onClick={endChat} className="px-8 py-2 text-lg bg-red-600 hover:bg-red-800 rounded-lg shadow-lg">
-            End Chat
-          </button>
-        )}
-      </div>
+      )}
     </div>
   );
 };
