@@ -23,80 +23,53 @@ let waitingUser = null;
 
 // Socket.io
 io.on('connection', (socket) => {
-  console.log(`A user connected: ${socket.id}`);
+  console.log("User connected:", socket.id);
 
-  socket.on('join', (data) => {
-    console.log(`User ${socket.id} joining with nickname: ${data.nickname}`);
+  socket.on("join:room", ({ nickname }) => {
+    socket.nickname = nickname;
+    // Notify other users in the room
+    socket.broadcast.emit("user:joined", {
+      userId: socket.id,
+      nickname: nickname
+    });
     
-    if (waitingUser) {
-      console.log(`Pairing ${socket.id} with ${waitingUser}`);
-      const newUser = socket.id;
-      const waitingUserId = waitingUser;
-      waitingUser = null;
+    // Send list of existing users to the new user
+    const existingUsers = Array.from(io.sockets.sockets.values())
+      .filter(s => s.id !== socket.id && s.nickname)
+      .map(s => ({
+        userId: s.id,
+        nickname: s.nickname
+      }));
     
-      
-      // Send to waiting user (first user) - initiator
-      io.to(waitingUserId).emit('pair', { 
-        offerFrom: waitingUserId,
-        offerTo: newUser,
-        isInitiator: true
-      });
-      
-      // Send to new user (second user) - responder
-      io.to(newUser).emit('pair', { 
-        offerFrom: waitingUserId,
-        offerTo: newUser,
-        isInitiator: false
-      });
-
-      console.log(`Paired: ${waitingUserId} (initiator) with ${newUser} (responder)`);
-    } else {
-      console.log(`No waiting user. Adding ${socket.id} to the queue.`);
-      waitingUser = socket.id;
-    }
+    socket.emit("users:existing", existingUsers);
   });
 
-  // Handle offer
-  socket.on('offer', (data) => {
-    const { targetUser, offer } = data;
-    console.log(`Offer received from ${socket.id} for targetUser: ${targetUser}`);
-    if (targetUser && socket.id !== targetUser) {
-      io.to(targetUser).emit('offer', { offer, from: socket.id });
-    } else {
-      console.error(`Invalid offer: TargetUser (${targetUser}) or Self-referential offer (${socket.id})`);
-    }
+  socket.on("webrtc:offer", ({ to, offer }) => {
+    socket.to(to).emit("webrtc:offer", {
+      from: socket.id,
+      offer
+    });
   });
 
-  // Handle answer
-  socket.on('answer', (data) => {
-    const { targetUser, answer } = data;
-    console.log(`Answer received from ${socket.id} for targetUser: ${targetUser}`);
-    if (!targetUser) {
-      console.error('Answer targetUser is undefined!');
-      return;
-    }
-    if (socket.id === targetUser) {
-      console.error(`Invalid self-referential answer from ${socket.id} to ${targetUser}`);
-      return;
-    }
-    io.to(targetUser).emit('answer', { answer, from: socket.id });
+  socket.on("webrtc:answer", ({ to, answer }) => {
+    socket.to(to).emit("webrtc:answer", {
+      from: socket.id,
+      answer
+    });
   });
 
-  // Handle ICE candidates
-  socket.on('ice-candidate', (data) => {
-    console.log(`ICE candidate from ${socket.id} to ${data.targetUser}`);
-    io.to(data.targetUser).emit('ice-candidate', { candidate: data.candidate, from: socket.id });
+  socket.on("webrtc:ice-candidate", ({ to, candidate }) => {
+    socket.to(to).emit("webrtc:ice-candidate", {
+      from: socket.id,
+      candidate
+    });
   });
 
-  // Handle disconnection
-  socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
-    if (waitingUser === socket.id) {
-      console.log(`Removing ${socket.id} from the queue`);
-      waitingUser = null;
-    } else {
-      socket.broadcast.emit('user-disconnected', socket.id);
-    }
+  socket.on("disconnect", () => {
+    socket.broadcast.emit("user:left", {
+      userId: socket.id,
+      nickname: socket.nickname
+    });
   });
 });
 

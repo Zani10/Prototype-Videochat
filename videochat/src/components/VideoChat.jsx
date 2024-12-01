@@ -11,13 +11,12 @@ const VideoChat = () => {
   const [waitingMessage, setWaitingMessage] = useState('Waiting for another user to join');
   const [socket, setSocket] = useState(null);
   const [pairedUserId, setPairedUserId] = useState(null);
+  const [peers, setPeers] = useState({});
+  const [remoteStreams, setRemoteStreams] = useState({});
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
-
-  const peerConnectionRef = useRef(null);
-  const receivedTracksRef = useRef({ audio: false, video: false });
 
   const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001';
 
@@ -152,6 +151,99 @@ const VideoChat = () => {
     peerConnectionRef.current = new RTCPeerConnection();
   };
 
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on("user:joined", ({ userId, nickname }) => {
+      console.log(`User ${nickname} (${userId}) joined`);
+      createPeerConnection(userId, true); // We're the initiator
+    });
+
+    socket.on("user:left", ({ userId }) => {
+      if (peers[userId]) {
+        peers[userId].close();
+        const newPeers = { ...peers };
+        delete newPeers[userId];
+        setPeers(newPeers);
+      }
+    });
+
+    socket.on("webrtc:offer", async ({ from, offer }) => {
+      console.log("Received offer from", from);
+      const pc = createPeerConnection(from, false);
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit("webrtc:answer", { to: from, answer });
+    });
+
+    socket.on("webrtc:answer", async ({ from, answer }) => {
+      console.log("Received answer from", from);
+      const pc = peers[from];
+      if (pc) {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      }
+    });
+
+    socket.on("webrtc:ice-candidate", async ({ from, candidate }) => {
+      console.log("Received ICE candidate from", from);
+      const pc = peers[from];
+      if (pc) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      }
+    });
+  }, [socket]);
+
+  const createPeerConnection = (userId, isInitiator) => {
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+      ],
+    });
+
+    // Store the peer connection
+    setPeers(prev => ({ ...prev, [userId]: pc }));
+
+    // Add local stream
+    localStream.current?.getTracks().forEach(track => {
+      pc.addTrack(track, localStream.current);
+    });
+
+    // Handle ICE candidates
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit("webrtc:ice-candidate", {
+          to: userId,
+          candidate: event.candidate,
+        });
+      }
+    };
+
+    // Handle incoming streams
+    pc.ontrack = (event) => {
+      const [stream] = event.streams;
+      setRemoteStreams(prev => ({
+        ...prev,
+        [userId]: stream
+      }));
+    };
+
+    // If we're the initiator, create and send the offer
+    if (isInitiator) {
+      pc.createOffer()
+        .then(offer => pc.setLocalDescription(offer))
+        .then(() => {
+          socket.emit("webrtc:offer", {
+            to: userId,
+            offer: pc.localDescription,
+          });
+        });
+    }
+
+    return pc;
+  };
+
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
       {!isChatStarted ? (
@@ -237,6 +329,16 @@ const VideoChat = () => {
               <FontAwesomeIcon icon={faPhone} className="text-white text-xl" />
             </button>
           </div>
+          {Object.entries(remoteStreams).map(([userId, stream]) => (
+            <video
+              key={userId}
+              ref={el => {
+                if (el) el.srcObject = stream;
+              }}
+              autoPlay
+              playsInline
+            />
+          ))}
         </div>
       )}
     </div>
