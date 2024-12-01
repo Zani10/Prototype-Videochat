@@ -58,23 +58,59 @@ const VideoChat = () => {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      localStreamRef.current = stream;
-      localVideoRef.current.srcObject = stream;
+      // First check if getUserMedia is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('getUserMedia is not supported in this browser');
+      }
 
+      // Set specific constraints for video and audio
+      const constraints = {
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: "user"
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
+      };
+
+      // Request permissions first
+      await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+
+      // Then get the stream with specific constraints
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      if (!stream) {
+        throw new Error('Failed to get media stream');
+      }
+
+      localStreamRef.current = stream;
+      
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        await localVideoRef.current.play().catch(e => console.log('Playback error:', e));
+      }
+
+      // Initialize WebRTC peer connection
       peerConnectionRef.current = new RTCPeerConnection({
         iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-        ],
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
       });
 
-      stream.getTracks().forEach((track) => {
+      // Add tracks to peer connection
+      stream.getTracks().forEach(track => {
         peerConnectionRef.current.addTrack(track, stream);
       });
 
+      // Set up peer connection event handlers
       peerConnectionRef.current.ontrack = (event) => {
-        remoteVideoRef.current.srcObject = event.streams[0];
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
       };
 
       peerConnectionRef.current.onicecandidate = (event) => {
@@ -83,9 +119,11 @@ const VideoChat = () => {
         }
       };
 
+      // Join room and set up socket event handlers
       socket.emit('join', { nickname });
 
       socket.on('offer', async (offer) => {
+        if (!peerConnectionRef.current) return;
         await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await peerConnectionRef.current.createAnswer();
         await peerConnectionRef.current.setLocalDescription(answer);
@@ -93,17 +131,36 @@ const VideoChat = () => {
       });
 
       socket.on('answer', async (answer) => {
+        if (!peerConnectionRef.current) return;
         await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
       });
 
       socket.on('ice-candidate', async (candidate) => {
-        await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        if (!peerConnectionRef.current) return;
+        try {
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.error('Error adding received ice candidate', e);
+        }
       });
 
       setIsChatStarted(true);
+
     } catch (error) {
-      console.error('Error accessing media devices:', error);
-      alert('Failed to start chat. Please try again.');
+      console.error('Detailed error:', error);
+      
+      // More specific error messages based on the error type
+      if (error.name === 'NotAllowedError') {
+        alert('Please allow camera and microphone access to use this app.');
+      } else if (error.name === 'NotFoundError') {
+        alert('No camera or microphone found. Please check your devices.');
+      } else if (error.name === 'NotReadableError') {
+        alert('Your camera or microphone is already in use by another application.');
+      } else {
+        alert(`Failed to start chat: ${error.message}`);
+      }
+      
+      setIsChatStarted(false);
     }
   };
 
