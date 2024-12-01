@@ -17,6 +17,7 @@ const VideoChat = () => {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
+  const peerConnectionRef = useRef({});
 
   const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001';
 
@@ -203,12 +204,14 @@ const VideoChat = () => {
     });
 
     // Store the peer connection
-    setPeers(prev => ({ ...prev, [userId]: pc }));
+    peerConnectionRef.current[userId] = pc;
 
     // Add local stream
-    localStream.current?.getTracks().forEach(track => {
-      pc.addTrack(track, localStream.current);
-    });
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStreamRef.current);
+      });
+    }
 
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
@@ -245,90 +248,20 @@ const VideoChat = () => {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
-      {!isChatStarted ? (
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-blue-500 mb-6">StreamConnect</h1>
-          <input
-            type="text"
-            placeholder="Enter your nickname"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            className="p-2 text-black rounded w-80 mb-4"
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
+      <div className="w-full max-w-4xl">
+        {/* Video container */}
+        <div className="flex flex-wrap gap-4 mb-4">
+          {/* Local video */}
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-[400px] h-[300px] bg-black rounded-lg object-cover"
           />
-          <button
-            onClick={() => {
-              console.log('Start button clicked');
-              console.log('Socket status:', socket?.connected);
-              console.log('Nickname:', nickname);
-              startChat();
-            }}
-            disabled={!nickname.trim()}
-            className={`px-6 py-2 rounded-lg font-semibold ${
-              nickname.trim() ? 'bg-green-500 hover:bg-green-700' : 'bg-gray-500 cursor-not-allowed'
-            }`}
-          >
-            Start Call
-          </button>
-        </div>
-      ) : (
-        <div className="w-full h-full flex flex-col">
-          <div className="flex-1 flex">
-            <div className="flex-1 bg-black flex flex-col items-center justify-center relative">
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-              <p className="absolute top-2 left-2 text-lg font-semibold bg-black bg-opacity-50 px-2 py-1 rounded">
-                {nickname}
-              </p>
-            </div>
-            <div className="flex-1 bg-gray-800 flex items-center justify-center relative">
-              <video
-                ref={remoteVideoRef}
-                autoPlay
-                playsInline
-                className="w-full h-full object-cover"
-                onLoadedMetadata={() => {
-                  console.log('Remote video metadata loaded');
-                  if (remoteVideoRef.current.paused) {
-                    remoteVideoRef.current.play().catch(err => {
-                      console.error('Error playing remote video on metadata load:', err);
-                    });
-                  }
-                }}
-                onPlay={() => console.log('Remote video started playing')}
-                onPause={() => console.log('Remote video paused')}
-                onError={(e) => console.error('Remote video error:', e)}
-              />
-              {(!remoteVideoRef.current?.srcObject || !remoteVideoRef.current?.videoWidth) && (
-                <p className="absolute text-xl font-semibold text-gray-300">{waitingMessage}</p>
-              )}
-            </div>
-          </div>
-          <div className="w-full bg-gray-700 flex items-center justify-center gap-4 py-3">
-            <button
-              onClick={toggleVideo}
-              className="w-12 h-12 flex justify-center items-center rounded-full bg-blue-600 hover:bg-blue-800"
-            >
-              <FontAwesomeIcon icon={isVideoEnabled ? faVideo : faVideoSlash} className="text-white text-xl" />
-            </button>
-            <button
-              onClick={toggleAudio}
-              className="w-12 h-12 flex justify-center items-center rounded-full bg-green-600 hover:bg-green-800"
-            >
-              <FontAwesomeIcon icon={isAudioEnabled ? faMicrophone : faMicrophoneSlash} className="text-white text-xl" />
-            </button>
-            <button
-              onClick={endCall}
-              className="w-12 h-12 flex justify-center items-center rounded-full bg-red-600 hover:bg-red-800"
-            >
-              <FontAwesomeIcon icon={faPhone} className="text-white text-xl" />
-            </button>
-          </div>
+          
+          {/* Remote videos */}
           {Object.entries(remoteStreams).map(([userId, stream]) => (
             <video
               key={userId}
@@ -337,10 +270,29 @@ const VideoChat = () => {
               }}
               autoPlay
               playsInline
+              className="w-[400px] h-[300px] bg-black rounded-lg object-cover"
             />
           ))}
         </div>
-      )}
+
+        {/* Controls */}
+        <div className="flex flex-col items-center gap-4">
+          <input
+            type="text"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            placeholder="Enter your nickname"
+            className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          
+          <button
+            onClick={handleStartCall}
+            className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            Start Call
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
