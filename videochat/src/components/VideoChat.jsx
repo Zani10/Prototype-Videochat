@@ -61,20 +61,23 @@ const VideoChat = () => {
     }
   }, [isChatStarted]);
 
-  const startChat = () => {
-    if (!nickname.trim()) return;
-    
-    if (!socket?.connected) {
-      console.error('Socket not connected');
-      alert('Connection error. Please try again.');
-      return;
-    }
-
+  const startCall = async () => {
     try {
-      setIsChatStarted(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
+      localStreamRef.current = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+      
+      // Join room with nickname
+      if (socket && nickname) {
+        socket.emit('join:room', { nickname });
+      }
     } catch (error) {
-      console.error('Error starting chat:', error);
-      alert('Failed to start chat. Please try again.');
+      console.error('Error accessing media devices:', error);
     }
   };
 
@@ -286,7 +289,7 @@ const VideoChat = () => {
           />
           
           <button
-            onClick={handleStartCall}
+            onClick={startCall}
             className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             Start Call
