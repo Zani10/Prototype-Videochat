@@ -25,43 +25,32 @@ let waitingUser = null;
 io.on('connection', (socket) => {
   console.log("User connected:", socket.id);
 
-  socket.on("join:room", ({ nickname }) => {
-    socket.nickname = nickname;
-    // Notify other users in the room
+  socket.on("join", ({ nickname }) => {
+    console.log('User joined:', nickname);
     socket.broadcast.emit("user:joined", {
       userId: socket.id,
       nickname: nickname
     });
-    
-    // Send list of existing users to the new user
-    const existingUsers = Array.from(io.sockets.sockets.values())
-      .filter(s => s.id !== socket.id && s.nickname)
-      .map(s => ({
-        userId: s.id,
-        nickname: s.nickname
-      }));
-    
-    socket.emit("users:existing", existingUsers);
   });
 
-  socket.on("webrtc:offer", ({ to, offer }) => {
-    socket.to(to).emit("webrtc:offer", {
+  socket.on("offer", ({ to, offer }) => {
+    socket.to(to).emit("offer", {
       from: socket.id,
-      offer
+      offer: offer
     });
   });
 
-  socket.on("webrtc:answer", ({ to, answer }) => {
-    socket.to(to).emit("webrtc:answer", {
+  socket.on("answer", ({ to, answer }) => {
+    socket.to(to).emit("answer", {
       from: socket.id,
-      answer
+      answer: answer
     });
   });
 
-  socket.on("webrtc:ice-candidate", ({ to, candidate }) => {
-    socket.to(to).emit("webrtc:ice-candidate", {
+  socket.on("ice-candidate", ({ to, candidate }) => {
+    socket.to(to).emit("ice-candidate", {
       from: socket.id,
-      candidate
+      candidate: candidate
     });
   });
 
