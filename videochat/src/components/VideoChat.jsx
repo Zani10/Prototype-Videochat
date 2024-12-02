@@ -152,15 +152,27 @@ const VideoChat = () => {
         pc.addTrack(track, mediaStream);
       });
 
-      // Safe way to handle remote stream
+      // Updated remote stream handling
       pc.ontrack = (event) => {
-        console.log('Received remote track:', event.streams[0]);
-        if (remoteVideoRef.current) {
+        console.log('Received remote track:', event.track.kind);
+        if (remoteVideoRef.current && event.streams && event.streams[0]) {
           remoteVideoRef.current.srcObject = event.streams[0];
+          remoteVideoRef.current.play().catch(e => console.log('Remote video play error:', e));
         }
       };
 
       peerConnectionRef.current = pc;
+
+      // Add ICE candidate handling
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('ice-candidate', {
+            candidate: event.candidate,
+            to: Object.keys(peers)[0]
+          });
+        }
+      };
+
       socket.emit('join', { nickname });
       setIsChatStarted(true);
 
@@ -224,6 +236,14 @@ const VideoChat = () => {
     peerConnectionRef.current = null;
   };
 
+  // Add this useEffect to handle remote video
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
+      console.log('Setting up remote video');
+      remoteVideoRef.current.play().catch(e => console.log('Remote video play error:', e));
+    }
+  }, [remoteVideoRef.current?.srcObject]);
+
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
       {!isChatStarted ? (
@@ -267,6 +287,10 @@ const VideoChat = () => {
                 autoPlay
                 playsInline
                 className="w-full h-full object-cover"
+                onLoadedMetadata={() => {
+                  console.log('Remote video metadata loaded');
+                  remoteVideoRef.current.play().catch(e => console.log('Play error:', e));
+                }}
               />
               {(!remoteVideoRef.current?.srcObject) && (
                 <p className="absolute text-xl font-semibold text-gray-300">{waitingMessage}</p>
