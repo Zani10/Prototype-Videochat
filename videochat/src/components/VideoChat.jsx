@@ -29,53 +29,24 @@ const VideoChat = () => {
 
     newSocket.on('user:joined', async ({ userId }) => {
       console.log('User joined:', userId);
-      
-      // Create offer when new user joins
-      if (peerConnectionRef.current && localStreamRef.current) {
-        try {
-          const offer = await peerConnectionRef.current.createOffer();
-          await peerConnectionRef.current.setLocalDescription(offer);
-          newSocket.emit('offer', { to: userId, offer });
-        } catch (err) {
-          console.error('Error creating offer:', err);
-        }
+      if (peerConnectionRef.current) {
+        const offer = await peerConnectionRef.current.createOffer();
+        await peerConnectionRef.current.setLocalDescription(offer);
+        newSocket.emit('offer', { to: userId, offer });
       }
     });
 
     newSocket.on('offer', async ({ from, offer }) => {
       console.log('Received offer from:', from);
-      if (peerConnectionRef.current) {
-        try {
-          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(offer));
-          const answer = await peerConnectionRef.current.createAnswer();
-          await peerConnectionRef.current.setLocalDescription(answer);
-          newSocket.emit('answer', { to: from, answer });
-        } catch (err) {
-          console.error('Error handling offer:', err);
-        }
-      }
+      await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peerConnectionRef.current.createAnswer();
+      await peerConnectionRef.current.setLocalDescription(answer);
+      newSocket.emit('answer', { to: from, answer });
     });
 
     newSocket.on('answer', async ({ from, answer }) => {
       console.log('Received answer from:', from);
-      if (peerConnectionRef.current) {
-        try {
-          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-        } catch (err) {
-          console.error('Error handling answer:', err);
-        }
-      }
-    });
-
-    newSocket.on('ice-candidate', async ({ from, candidate }) => {
-      console.log('Received ICE candidate');
-      if (peerConnectionRef.current) {
-        try {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (err) {
-          console.error('Error adding ICE candidate:', err);
-        }
-      }
+      await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
     });
 
     setSocket(newSocket);
@@ -168,51 +139,29 @@ const VideoChat = () => {
       });
 
       localStreamRef.current = mediaStream;
-      setStream(mediaStream);
+      localVideoRef.current.srcObject = mediaStream;
 
-      // Create peer connection
       const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       });
 
-      // Add local stream tracks to peer connection
+      // Add local stream to peer connection
       mediaStream.getTracks().forEach(track => {
         pc.addTrack(track, mediaStream);
       });
 
-      // Handle incoming streams
+      // This is the crucial part for displaying guest video
       pc.ontrack = (event) => {
         console.log('Received remote track:', event.streams[0]);
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-        }
-      };
-
-      // Handle ICE candidates
-      pc.onicecandidate = (event) => {
-        if (event.candidate && socket) {
-          console.log('Sending ICE candidate');
-          socket.emit('ice-candidate', {
-            candidate: event.candidate,
-            to: Object.keys(peers)[0] // Send to the first peer
-          });
-        }
+        remoteVideoRef.current.srcObject = event.streams[0];
       };
 
       peerConnectionRef.current = pc;
-
-      // Join room
-      if (socket) {
-        socket.emit('join', { nickname });
-      }
-
+      socket.emit('join', { nickname });
       setIsChatStarted(true);
 
     } catch (error) {
-      console.error('Error in startChat:', error);
+      console.error('Error:', error);
       alert('Could not access camera/microphone');
     }
   };
