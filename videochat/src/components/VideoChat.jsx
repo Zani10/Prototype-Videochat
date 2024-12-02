@@ -11,6 +11,7 @@ const VideoChat = () => {
   const [waitingMessage, setWaitingMessage] = useState('Waiting for another user to join');
   const [socket, setSocket] = useState(null);
   const [stream, setStream] = useState(null);
+  const [guestNickname, setGuestNickname] = useState('');
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -27,8 +28,9 @@ const VideoChat = () => {
       console.log('Connected to socket server');
     });
 
-    newSocket.on('user:joined', async ({ userId }) => {
+    newSocket.on('user:joined', async ({ userId, nickname: peerNickname }) => {
       console.log('User joined:', userId);
+      setGuestNickname(peerNickname);
       if (peerConnectionRef.current) {
         const offer = await peerConnectionRef.current.createOffer();
         await peerConnectionRef.current.setLocalDescription(offer);
@@ -133,16 +135,23 @@ const VideoChat = () => {
     if (!nickname.trim()) return;
 
     try {
+      // Reset any existing connections
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true
       });
 
-      // Immediately set local stream to video element
       localStreamRef.current = mediaStream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = mediaStream;
-        // Force local video to play
         await localVideoRef.current.play().catch(e => console.log('Local video play error:', e));
       }
 
@@ -150,16 +159,22 @@ const VideoChat = () => {
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       });
 
-      // Add tracks to peer connection
       mediaStream.getTracks().forEach(track => {
         pc.addTrack(track, mediaStream);
       });
 
-      // Handle remote stream (this part was working)
       pc.ontrack = (event) => {
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log('ICE Connection State:', pc.iceConnectionState);
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log('Connection State:', pc.connectionState);
       };
 
       peerConnectionRef.current = pc;
@@ -241,8 +256,19 @@ const VideoChat = () => {
     }
   }, [isChatStarted]);
 
+  useEffect(() => {
+    return () => {
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+      }
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
+    <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
       {!isChatStarted ? (
         <div className="text-center">
           <h1 className="text-4xl font-bold text-blue-500 mb-6">StreamConnect</h1>
@@ -264,9 +290,9 @@ const VideoChat = () => {
           </button>
         </div>
       ) : (
-        <div className="w-full h-full flex flex-col">
-          <div className="flex-1 flex">
-            <div className="flex-1 bg-black flex flex-col items-center justify-center relative">
+        <div className="flex flex-col h-full">
+          <div className="flex-1 flex min-h-0">
+            <div className="flex-1 bg-black relative">
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -278,23 +304,26 @@ const VideoChat = () => {
                 {nickname}
               </p>
             </div>
-            <div className="flex-1 bg-gray-800 flex items-center justify-center relative">
+            <div className="flex-1 bg-gray-800 relative">
               <video
                 ref={remoteVideoRef}
                 autoPlay
                 playsInline
                 className="w-full h-full object-cover"
-                onLoadedMetadata={() => {
-                  console.log('Remote video metadata loaded');
-                  remoteVideoRef.current.play().catch(e => console.log('Play error:', e));
-                }}
               />
-              {(!remoteVideoRef.current?.srcObject) && (
-                <p className="absolute text-xl font-semibold text-gray-300">{waitingMessage}</p>
+              {guestNickname && (
+                <p className="absolute top-2 right-2 text-lg font-semibold bg-black bg-opacity-50 px-2 py-1 rounded">
+                  {guestNickname}
+                </p>
+              )}
+              {!remoteVideoRef.current?.srcObject && (
+                <p className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-xl font-semibold text-gray-300">
+                  {waitingMessage}
+                </p>
               )}
             </div>
           </div>
-          <div className="w-full bg-gray-700 flex items-center justify-center gap-4 py-3">
+          <div className="h-16 bg-gray-700 flex items-center justify-center gap-4">
             <button
               onClick={toggleVideo}
               className="w-12 h-12 flex justify-center items-center rounded-full bg-blue-600 hover:bg-blue-800"
