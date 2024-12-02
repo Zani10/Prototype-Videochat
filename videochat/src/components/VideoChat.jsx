@@ -31,29 +31,51 @@ const VideoChat = () => {
     newSocket.on('user:joined', async ({ userId, nickname: peerNickname }) => {
       console.log('User joined:', userId);
       setGuestNickname(peerNickname);
-      if (peerConnectionRef.current) {
-        const offer = await peerConnectionRef.current.createOffer();
-        await peerConnectionRef.current.setLocalDescription(offer);
-        newSocket.emit('offer', { to: userId, offer });
+      
+      try {
+        if (peerConnectionRef.current && localStreamRef.current) {
+          console.log('Creating offer for:', userId);
+          const offer = await peerConnectionRef.current.createOffer();
+          await peerConnectionRef.current.setLocalDescription(offer);
+          newSocket.emit('offer', { to: userId, offer });
+        }
+      } catch (err) {
+        console.error('Error creating offer:', err);
       }
     });
 
     newSocket.on('offer', async ({ from, offer }) => {
       console.log('Received offer from:', from);
-      await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnectionRef.current.createAnswer();
-      await peerConnectionRef.current.setLocalDescription(answer);
-      newSocket.emit('answer', { to: from, answer });
+      try {
+        if (peerConnectionRef.current) {
+          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(offer));
+          const answer = await peerConnectionRef.current.createAnswer();
+          await peerConnectionRef.current.setLocalDescription(answer);
+          newSocket.emit('answer', { to: from, answer });
+        }
+      } catch (err) {
+        console.error('Error handling offer:', err);
+      }
     });
 
-    newSocket.on('answer', async ({ from, answer }) => {
-      console.log('Received answer from:', from);
-      await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+    newSocket.on('answer', async ({ answer }) => {
+      console.log('Received answer');
+      try {
+        if (peerConnectionRef.current) {
+          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+      } catch (err) {
+        console.error('Error handling answer:', err);
+      }
     });
 
     setSocket(newSocket);
 
-    return () => newSocket.disconnect();
+    return () => {
+      if (newSocket) {
+        newSocket.disconnect();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -135,10 +157,9 @@ const VideoChat = () => {
     if (!nickname.trim()) return;
 
     try {
-      // Reset any existing connections
+      // Clean up any existing connections
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
-        peerConnectionRef.current = null;
       }
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -152,11 +173,13 @@ const VideoChat = () => {
       localStreamRef.current = mediaStream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = mediaStream;
-        await localVideoRef.current.play().catch(e => console.log('Local video play error:', e));
       }
 
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
       });
 
       mediaStream.getTracks().forEach(track => {
@@ -164,6 +187,7 @@ const VideoChat = () => {
       });
 
       pc.ontrack = (event) => {
+        console.log('Received remote track');
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
@@ -175,6 +199,10 @@ const VideoChat = () => {
 
       pc.onconnectionstatechange = () => {
         console.log('Connection State:', pc.connectionState);
+        if (pc.connectionState === 'failed') {
+          console.log('Connection failed, retrying...');
+          startChat(); // Auto retry on failure
+        }
       };
 
       peerConnectionRef.current = pc;
@@ -241,7 +269,7 @@ const VideoChat = () => {
     peerConnectionRef.current = null;
   };
 
-  // Add this useEffect to handle remote video
+  //  handle remote video
   useEffect(() => {
     if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
       console.log('Setting up remote video');
@@ -249,7 +277,7 @@ const VideoChat = () => {
     }
   }, [remoteVideoRef.current?.srcObject]);
 
-  // Add this useEffect to ensure local video stays visible
+  // e local video stays visible
   useEffect(() => {
     if (isChatStarted && localStreamRef.current && localVideoRef.current) {
       localVideoRef.current.srcObject = localStreamRef.current;
@@ -270,24 +298,26 @@ const VideoChat = () => {
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
       {!isChatStarted ? (
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-blue-500 mb-6">StreamConnect</h1>
-          <input
-            type="text"
-            placeholder="Enter your nickname"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            className="p-2 text-black rounded w-80 mb-4"
-          />
-          <button
-            onClick={startChat}
-            disabled={!nickname.trim()}
-            className={`px-6 py-2 rounded-lg font-semibold ${
-              nickname.trim() ? 'bg-green-500 hover:bg-green-700' : 'bg-gray-500 cursor-not-allowed'
-            }`}
-          >
-            Start Call
-          </button>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <h1 className="text-4xl font-bold text-blue-500 mb-6">StreamConnect</h1>
+            <input
+              type="text"
+              placeholder="Enter your nickname"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              className="p-2 text-black rounded w-80 mb-4"
+            />
+            <button
+              onClick={startChat}
+              disabled={!nickname.trim()}
+              className={`px-6 py-2 rounded-lg font-semibold ${
+                nickname.trim() ? 'bg-green-500 hover:bg-green-700' : 'bg-gray-500 cursor-not-allowed'
+              }`}
+            >
+              Start Call
+            </button>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col h-full">
