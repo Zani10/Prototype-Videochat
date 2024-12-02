@@ -139,7 +139,9 @@ const VideoChat = () => {
       });
 
       localStreamRef.current = mediaStream;
-      localVideoRef.current.srcObject = mediaStream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = mediaStream;
+      }
 
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -150,10 +152,12 @@ const VideoChat = () => {
         pc.addTrack(track, mediaStream);
       });
 
-      // This is the crucial part for displaying guest video
+      // Safe way to handle remote stream
       pc.ontrack = (event) => {
         console.log('Received remote track:', event.streams[0]);
-        remoteVideoRef.current.srcObject = event.streams[0];
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
       };
 
       peerConnectionRef.current = pc;
