@@ -152,27 +152,21 @@ const VideoChat = () => {
         pc.addTrack(track, mediaStream);
       });
 
-      // Updated remote stream handling
+      // Simple ontrack handler
       pc.ontrack = (event) => {
-        console.log('Received remote track:', event.track.kind);
-        if (remoteVideoRef.current && event.streams && event.streams[0]) {
+        if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
-          remoteVideoRef.current.play().catch(e => console.log('Remote video play error:', e));
+        }
+      };
+
+      // Simple ICE candidate handler
+      pc.onicecandidate = (event) => {
+        if (event.candidate && socket) {
+          socket.emit('ice-candidate', { candidate: event.candidate });
         }
       };
 
       peerConnectionRef.current = pc;
-
-      // Add ICE candidate handling
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('ice-candidate', {
-            candidate: event.candidate,
-            to: Object.keys(peers)[0]
-          });
-        }
-      };
-
       socket.emit('join', { nickname });
       setIsChatStarted(true);
 
