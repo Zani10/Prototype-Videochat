@@ -138,31 +138,27 @@ const VideoChat = () => {
         audio: true
       });
 
+      // Immediately set local stream to video element
       localStreamRef.current = mediaStream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = mediaStream;
+        // Force local video to play
+        await localVideoRef.current.play().catch(e => console.log('Local video play error:', e));
       }
 
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       });
 
-      // Add local stream to peer connection
+      // Add tracks to peer connection
       mediaStream.getTracks().forEach(track => {
         pc.addTrack(track, mediaStream);
       });
 
-      // Simple ontrack handler
+      // Handle remote stream (this part was working)
       pc.ontrack = (event) => {
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
-        }
-      };
-
-      // Simple ICE candidate handler
-      pc.onicecandidate = (event) => {
-        if (event.candidate && socket) {
-          socket.emit('ice-candidate', { candidate: event.candidate });
         }
       };
 
@@ -237,6 +233,13 @@ const VideoChat = () => {
       remoteVideoRef.current.play().catch(e => console.log('Remote video play error:', e));
     }
   }, [remoteVideoRef.current?.srcObject]);
+
+  // Add this useEffect to ensure local video stays visible
+  useEffect(() => {
+    if (isChatStarted && localStreamRef.current && localVideoRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+  }, [isChatStarted]);
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
