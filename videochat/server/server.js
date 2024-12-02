@@ -26,7 +26,7 @@ io.on('connection', (socket) => {
   console.log("User connected:", socket.id);
 
   socket.on("join", ({ nickname }) => {
-    console.log('User joined:', nickname);
+    socket.nickname = nickname;
     socket.broadcast.emit("user:joined", {
       userId: socket.id,
       nickname: nickname
