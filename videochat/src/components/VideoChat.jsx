@@ -298,7 +298,7 @@ const VideoChat = () => {
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
       {!isChatStarted ? (
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center p-4">
           <div className="text-center">
             <h1 className="text-4xl font-bold text-blue-500 mb-6">StreamConnect</h1>
             <input
@@ -306,12 +306,12 @@ const VideoChat = () => {
               placeholder="Enter your nickname"
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
-              className="p-2 text-black rounded w-80 mb-4"
+              className="p-2 text-black rounded w-full max-w-[320px] mb-4"
             />
             <button
               onClick={startChat}
               disabled={!nickname.trim()}
-              className={`px-6 py-2 rounded-lg font-semibold ${
+              className={`px-6 py-2 rounded-lg font-semibold w-full max-w-[320px] ${
                 nickname.trim() ? 'bg-green-500 hover:bg-green-700' : 'bg-gray-500 cursor-not-allowed'
               }`}
             >
@@ -321,8 +321,8 @@ const VideoChat = () => {
         </div>
       ) : (
         <div className="flex flex-col h-full">
-          <div className="flex-1 flex min-h-0">
-            <div className="flex-1 bg-black relative">
+          <div className="flex-1 flex flex-col md:flex-row min-h-0">
+            <div className="flex-1 bg-black relative h-1/2 md:h-full">
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -330,11 +330,11 @@ const VideoChat = () => {
                 muted
                 className="w-full h-full object-cover"
               />
-              <p className="absolute top-2 left-2 text-lg font-semibold bg-black bg-opacity-50 px-2 py-1 rounded">
+              <p className="absolute top-2 left-2 text-sm md:text-lg font-semibold bg-black bg-opacity-50 px-2 py-1 rounded">
                 {nickname}
               </p>
             </div>
-            <div className="flex-1 bg-gray-800 relative">
+            <div className="flex-1 bg-gray-800 relative h-1/2 md:h-full">
               <video
                 ref={remoteVideoRef}
                 autoPlay
@@ -342,35 +342,35 @@ const VideoChat = () => {
                 className="w-full h-full object-cover"
               />
               {guestNickname && (
-                <p className="absolute top-2 right-2 text-lg font-semibold bg-black bg-opacity-50 px-2 py-1 rounded">
+                <p className="absolute top-2 right-2 text-sm md:text-lg font-semibold bg-black bg-opacity-50 px-2 py-1 rounded">
                   {guestNickname}
                 </p>
               )}
               {!remoteVideoRef.current?.srcObject && (
-                <p className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-xl font-semibold text-gray-300">
+                <p className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-base md:text-xl font-semibold text-gray-300 text-center px-4">
                   {waitingMessage}
                 </p>
               )}
             </div>
           </div>
-          <div className="h-16 bg-gray-700 flex items-center justify-center gap-4">
+          <div className="h-14 md:h-16 bg-gray-700 flex items-center justify-center gap-3 md:gap-4 px-2">
             <button
               onClick={toggleVideo}
-              className="w-12 h-12 flex justify-center items-center rounded-full bg-blue-600 hover:bg-blue-800"
+              className="w-10 h-10 md:w-12 md:h-12 flex justify-center items-center rounded-full bg-blue-600 hover:bg-blue-800"
             >
-              <FontAwesomeIcon icon={isVideoEnabled ? faVideo : faVideoSlash} className="text-white text-xl" />
+              <FontAwesomeIcon icon={isVideoEnabled ? faVideo : faVideoSlash} className="text-white text-lg md:text-xl" />
             </button>
             <button
               onClick={toggleAudio}
-              className="w-12 h-12 flex justify-center items-center rounded-full bg-green-600 hover:bg-green-800"
+              className="w-10 h-10 md:w-12 md:h-12 flex justify-center items-center rounded-full bg-green-600 hover:bg-green-800"
             >
-              <FontAwesomeIcon icon={isAudioEnabled ? faMicrophone : faMicrophoneSlash} className="text-white text-xl" />
+              <FontAwesomeIcon icon={isAudioEnabled ? faMicrophone : faMicrophoneSlash} className="text-white text-lg md:text-xl" />
             </button>
             <button
               onClick={endCall}
-              className="w-12 h-12 flex justify-center items-center rounded-full bg-red-600 hover:bg-red-800"
+              className="w-10 h-10 md:w-12 md:h-12 flex justify-center items-center rounded-full bg-red-600 hover:bg-red-800"
             >
-              <FontAwesomeIcon icon={faPhone} className="text-white text-xl" />
+              <FontAwesomeIcon icon={faPhone} className="text-white text-lg md:text-xl" />
             </button>
           </div>
         </div>
